@@ -1,13 +1,27 @@
-from pieces import Board
-import pandas as pd
+import numpy as np
 
 
-occupancy_file = 'puzzles/priority_test/board/occupancy.csv'
-occupancy = pd.read_csv(occupancy_file, header=None).to_numpy()
+class Shape(np.ndarray):
+
+    """
+    Describes a specific rotation of a piece, or the board.         
+    """
+
+    def __new__(cls, representation):  
+        return np.asarray(representation).view(cls)
 
 
-board = Board(occupancy, None, None, None, None)
+    def __init__(self, representation):
+        #super().__init__()
+        self.I = representation.shape[1]
+        self.J = representation.shape[2]
+        self.length = max(self.I, self.J)
 
-i, j = board.find_most_restricted()
 
-print(i, j)
+a = np.array([[[1, 2], [3, 4]]])
+
+s = Shape(a)
+
+
+print(s.length)
+print(s.shape)

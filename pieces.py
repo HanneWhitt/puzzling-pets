@@ -14,21 +14,12 @@ class Shape(np.ndarray):
         return np.asarray(representation).view(cls)
 
 
-    # def __init__(self) -> None:
-    #     super().__init__()
-
-    #     self.representation = representation
-    #     self.I = representation.shape[1]
-    #     self.J = representation.shape[2]
-    #     self.length = max(self.I, self.J)
-
-
-    def occupancy(self):
-        return self.representation[0]
-
-
-    def connectors(self):
-        return self[1:]
+    def __init__(self, representation):
+        self.I = representation.shape[1]
+        self.J = representation.shape[2]
+        self.length = max(self.I, self.J)
+        self.occupancy = self[0]
+        self.connectors = self[1:]
 
 
     @staticmethod
@@ -134,25 +125,17 @@ class Shape(np.ndarray):
         return occupancy, connectors
 
 
-    def visualize_shape(self, title=None, savefile=None):
+    def visualize_shape(self, title=None, savefile=None, marker_coords=None):
 
         """
         Show a plot of this rotation of this piece
         """
 
-        display_rep = self.make_display_representation()
-        RGB = self.make_RGB(display_rep)
-        plt.imshow(RGB)
-        plt.title(title)
-
-        if savefile:
-            plt.savefig(savefile)
-            print(f'Saved figure to {savefile}')
-        else:
-            plt.show()
+        display_rep = self.make_display_representation(marker_coords=marker_coords)
+        self.plot_display_representation(display_rep, title, savefile)
 
 
-    def make_display_representation(self):
+    def make_display_representation(self, marker_coords=None):
 
         """
         Create an enlarged version of the occupancy matrix with representation of the connectors,
@@ -160,15 +143,32 @@ class Shape(np.ndarray):
         """
 
         # Extend each square into a 5*5 block of repeats to facilitate adding connector representation
-        display_rep = np.kron(self.occupancy(), np.ones((5,5), dtype=int))
+        display_rep = np.kron(self.occupancy, np.ones((5,5), dtype=int))
 
         # Add connectors into correct positions       
-        for mat, adjust in zip(self.connectors(), [(-1, 2), (2, 0), (0, 2), (2, -1)]):
+        for mat, adjust in zip(self.connectors, [(-1, 2), (2, 0), (0, 2), (2, -1)]):
             base = np.zeros((5, 5), dtype=int)
             base[adjust] = 1
             display_rep += np.kron(mat, base)
 
+        if marker_coords:
+            marker_i, marker_j = np.array(marker_coords)*5 + 2
+            display_rep[marker_i, marker_j] += 2
+
         return display_rep
+
+
+    @staticmethod
+    def plot_display_representation(display_representation, title=None, savefile=None):
+        RGB = Shape.make_RGB(display_representation)
+        plt.imshow(RGB)
+        plt.title(title)
+        plt.axis('off')
+        if savefile:
+            plt.savefig(savefile, dpi = 1000)
+            print(f'Saved figure to {savefile}')
+        else:
+            plt.show()
 
 
     @staticmethod
@@ -181,7 +181,22 @@ class Shape(np.ndarray):
             [  0,   0,   0],   # black
             [255,   0,   0],   # red
             [  0, 255,   0],   # green
-            [  0,   0, 255]   # blue
+            [  0,   0, 255],   # blue
+            [255,  85,   0],   # orange
+            [  0, 255,  85],   # turquoise
+            [ 85,   0, 255],   # violet
+            [255, 171,   0],   # orange
+            [  0, 255, 171],   # turquoise
+            [171,   0, 255],   # violet
+            [255, 255,   0],   # yellow
+            [  0, 255, 255],   # cyan
+            [255,   0, 255],   # magenta
+            [171, 255,   0],   # yellow-green
+            [  0, 171, 255],   # sky
+            [255,   0, 171],   # rose
+            [ 85, 255,   0],   # yellow-green
+            [  0,  85, 255],   # sky
+            [255,   0,  85],   # rose
         ])
 
         # Assign colours
@@ -191,7 +206,7 @@ class Shape(np.ndarray):
 
 
     def n_connectors(self):
-        values, counts = np.unique(self.connectors(), return_counts=True)
+        values, counts = np.unique(self.connectors, return_counts=True)
         n_in, _, n_out = counts
         return n_in, n_out
 
@@ -213,8 +228,9 @@ class Piece(Shape):
         self.rotations = [Shape(self.get_rotation(representation, k)) for k in range(4)]
 
         # Build stacks
-        self.square_size = 2*self.length - 3
-        self.square_centre = self.length - 2
+        self.length = max(self.shape[1], self.shape[2])
+        self.stack_size = 2*self.length - 3
+        self.stack_centre = self.length - 2
 
         self.stacks = {}
 
@@ -223,14 +239,14 @@ class Piece(Shape):
         for connector_value, n_lyrs in [(-1, n_in), (1, n_out)]:
 
             # Create a single tensor to contain full representations of all possible orientations of the piece
-            stack = np.zeros((n_lyrs, 5, self.square_size, self.square_size), dtype=int)
+            stack = np.zeros((n_lyrs, 5, self.stack_size, self.stack_size), dtype=int)
 
             # Enumerate all rotations and build stack
             lyr = 0
             for rotation in self.rotations:
 
                 # Select top row of each rotation, northward facing connectors only
-                row_idxs, col_idxs = np.where(rotation.connectors()[connector_value - 1] == connector_value)
+                row_idxs, col_idxs = np.where(rotation.connectors[connector_value - 1] == connector_value)
                 if connector_value == 1:
                     row_idxs += 1
 
@@ -239,7 +255,7 @@ class Piece(Shape):
                 i_maxs, j_maxs = i_mins + rotation.I, j_mins + rotation.J
 
                 for imin, imax, jmin, jmax in zip(i_mins, i_maxs, j_mins, j_maxs):
-                    stack[lyr, :, imin:imax, jmin:jmax] = rotation.representation
+                    stack[lyr, :, imin:imax, jmin:jmax] = rotation
                     lyr += 1
 
             # if connector_value == -1:
@@ -264,43 +280,49 @@ class Piece(Shape):
 class Board(Shape):
 
 
-    # def __init__(
-    #         self,
-    #         representation,
-    #         history=None
-    # ):
+    def __init__(
+            self,
+            representation,
+            history=None
+    ):
         
-    #     super().__init__(representation)
-    #     self.history = history
+        super().__init__(representation)
+        self.history = history
 
 
     def find_most_restricted(self, tiebreaker_steps=5):
         
         """
-        Find the unoccupied square that has most occupied NESW neighbours
+        Find the unoccupied square that has most occupied surroundings
         """
 
         # Number of occupied neighbours for all unoccupied positions
-        tiebreaker = self.sum_occupied_neighbours(self.occupancy(), self.occupancy())
-        candidates = (tiebreaker == np.max(tiebreaker))
+        tiebreaker = self.sum_occupied_neighbours(self.occupancy, self.occupancy)
+        max_neighbours = np.max(tiebreaker)
+        candidates = (tiebreaker == max_neighbours)
 
-        # Break ties by looking at N occupied neighbours for unoccupied neighbours of remaining candidates
-        # Finite number of tiebreaking rounds avoids infinite loop
-        for _ in range(tiebreaker_steps):
-            n_candidates = np.count_nonzero(candidates)
-            if n_candidates == 1:
-                break
-            elif n_candidates > 1:
-                tiebreaker = self.sum_occupied_neighbours(tiebreaker, self.occupancy())
-                candidate_scores = tiebreaker*candidates
-                candidates = (candidate_scores == np.max(candidate_scores))
-            else:
-                raise RuntimeError('Tiebreaker eliminated all candidates')
+        if max_neighbours < 4:
+            # Break ties by looking at N occupied neighbours for unoccupied neighbours of remaining candidates
+            # Finite number of tiebreaking rounds avoids infinite loop
+            for _ in range(tiebreaker_steps):
+                n_candidates = np.count_nonzero(candidates)
+                if n_candidates == 1:
+                    break
+                elif n_candidates > 1:
+                    tiebreaker = self.sum_occupied_neighbours(tiebreaker, self.occupancy)
+                    candidate_scores = tiebreaker*candidates
+                    max_score = np.max(candidate_scores)
+                    if max_score > 0:
+                        candidates = (candidate_scores == max_score)
+                else:
+                    raise RuntimeError('Tiebreaker eliminated all candidates')
 
         # After all tiebreaker rounds, take indices of first candidate
         candidate_indices = np.nonzero(candidates)
 
-        return candidate_indices[0][0], candidate_indices[1][0]
+        i, j = candidate_indices[0][0], candidate_indices[1][0]
+
+        return i, j
 
 
     @staticmethod
@@ -321,20 +343,117 @@ class Board(Shape):
         Return any connector facing unnoccupied square i, j        
         """
 
-        out_connectors = self.connectors()[[0, 3, 2, 1], i, j]
+        out_connectors = self.connectors[[0, 3, 2, 1], i, j]
         for k, value in enumerate(out_connectors):
             if value == 1:
                 return 1, k
 
-        in_connectors = self.connectors()[[2, 1, 0, 3], [i+1, i, i-1, i], [j, j+1, j, j-1]]
+        in_connectors = self.connectors[[2, 1, 0, 3], [i+1, i, i-1, i], [j, j+1, j, j-1]]
 
         for k, value in enumerate(in_connectors):
             if value == -1:
                 return -1, k
 
+
+
+        print('\n\n\nOH DEAR')
+
+        # Number of occupied neighbours for all unoccupied positions
+        tiebreaker = self.sum_occupied_neighbours(self.occupancy, self.occupancy)
+
+        print('tiebreaker')
+        print(tiebreaker)
+
+        max_neighbours = np.max(tiebreaker)
+
+        candidates = (tiebreaker == max_neighbours)
+
+        print('candidates')
+        print(candidates)
+
+        if max_neighbours < 4:
+
+            # Break ties by looking at N occupied neighbours for unoccupied neighbours of remaining candidates
+            # Finite number of tiebreaking rounds avoids infinite loop
+            for _ in range(5):
+
+                print(_)
+
+                n_candidates = np.count_nonzero(candidates)
+                if n_candidates == 1:
+                    break
+                elif n_candidates > 1:
+                    tiebreaker = self.sum_occupied_neighbours(tiebreaker, self.occupancy)
+
+                    print('tiebreaker')
+                    print(tiebreaker)
+
+
+                    candidate_scores = tiebreaker*candidates
+
+                    print('candidate_scores')
+                    print(candidate_scores)
+
+                    max_score = np.max(candidate_scores)
+
+                    if max_score > 0:
+                        candidates = (candidate_scores == max_score)
+                    
+                    print('candidates')
+                    print(candidates)
+
+                else:
+                    raise RuntimeError('Tiebreaker eliminated all candidates')
+
+        # After all tiebreaker rounds, take indices of first candidate
+        candidate_indices = np.nonzero(candidates)
+
+
+
+        i, j = candidate_indices[0][0], candidate_indices[1][0]
+
+
+        self.visualize_shape(title = f'Most restricted: {i, j}', marker_coords=(i, j))
         raise RuntimeError('get_any_connector() terminated without finding a connector')
     
     
+    def place_pieces(self, piece, i, j, conn_type, k, layer=None):
+
+
+        # TODO: sort out this function to make it generalise to multi-piece stacks
+        # TODO: split out index calculations etc. bit of a monster right now
+
+
+        # Get indices of fragment of the piece stack which will overlap the board
+        st_i_min, st_i_max = max(0, piece.stack_centre - i), min(piece.stack_size, piece.stack_centre + self.I - i)
+        st_j_min, st_j_max = max(0, piece.stack_centre - j), min(piece.stack_size, piece.stack_centre + self.J - j)
+
+        # Use stack to simultaneously try all orientations of piece exposing complementary connector
+        piece_stack = piece.stacks[conn_type][k][:, :, st_i_min:st_i_max, st_j_min:st_j_max]
+
+        # Find the part of the board being updated by the piece stack
+        b_i_min, b_i_max = max(0, i - piece.stack_centre), min(self.I, i + piece.stack_centre + 1)
+        b_j_min, b_j_max = max(0, j - piece.stack_centre), min(self.J, j + piece.stack_centre + 1)
+
+        if layer is None:
+            # Create a stack of copies of the board of matching size
+            board_stack = np.tile(self, (piece_stack.shape[0], 1, 1, 1))
+
+            # Place all orientations of the piece on the board simultaneously
+            board_stack[:, :, b_i_min:b_i_max, b_j_min:b_j_max] += piece_stack
+
+            return board_stack
+
+        else:
+            piece_stack = piece_stack[layer]
+            
+            new_board = self.copy()
+            new_board[:, b_i_min:b_i_max, b_j_min:b_j_max] += piece_stack
+
+            return Board(new_board)
+
+
+
 
 if __name__ == "__main__":
 
@@ -350,11 +469,15 @@ if __name__ == "__main__":
     i = 3
     j = 3
 
-    conn_type, k = board.get_any_connector(i, j)
+    #conn_type, k = [-1, 3] #board.get_any_connector(i, j)
+
+
+    #conn_type, k = board.get_any_connector(i, j)
     #print(conn_type, k)
 
 
-    # # piece.visualize_shape()
+
+    # piece.visualize_shape()
 
     # # in_stack = piece.stacks[-1]
 
@@ -386,21 +509,123 @@ if __name__ == "__main__":
     # print(conn_type, k)
 
     # Get the opposite type of connector, facing the opposite way
-    conn_type = -conn_type
-    k = (k+2)%4
+    #conn_type = -conn_type
+    #k = (k+2)%4
     
+    conn_type = 1
+    k = 2
 
-    rep = piece.stacks[conn_type][k][-1, :, :,]
+    rep = piece.stacks[conn_type][k][1, :, :, :]
     # for rep in piece_reps:
-
-    print(board.I, board.J)
-    print(piece.square_size)
-
-    # print(rep)
-    print()
 
     # Shape(rep).visualize_shape()
 
+    print(board.I, board.J)
+    print(piece.stack_size)
+
+    # print(rep)
+    # print()
+
+
     
+    print('\n\n')
+    print(0, i - piece.stack_centre)
+    print(board.I, i + piece.stack_centre + 1)
+    print('BOARD COORDS')
+
+    b_i_min, b_i_max = max(0, i - piece.stack_centre), min(board.I, i + piece.stack_centre + 1)
+    b_j_min, b_j_max = max(0, j - piece.stack_centre), min(board.J, j + piece.stack_centre + 1)
 
 
+    print('I:', b_i_min, b_i_max)
+    print('J:', b_j_min, b_j_max)
+
+
+
+
+    print('\n\n')
+    #print(0, i - piece.stack_centre)
+    print(0, piece.stack_centre - i)
+    print(piece.stack_size, piece.stack_centre + board.I - i)
+    print('PIECE COORDS')
+    st_i_min, st_i_max = max(0, piece.stack_centre - i), min(piece.stack_size, piece.stack_centre + board.I - i)
+    st_j_min, st_j_max = max(0, piece.stack_centre - j), min(piece.stack_size, piece.stack_centre + board.J - j)
+
+    print('I:', st_i_min, st_i_max)
+    print('J:', st_j_min, st_j_max)
+
+
+    board_frag = board[:, b_i_min:b_i_max, b_j_min:b_j_max]
+    # Shape(board_frag).visualize_shape()
+
+
+    stack_frag = rep[:, st_i_min:st_i_max, st_j_min:st_j_max]
+    # Shape(stack_frag).visualize_shape()
+
+
+    res = board_frag + stack_frag
+    # Shape(res).visualize_shape()
+
+    print(res)
+
+    
+    # Does it place squares on top of each other?
+    print('\nOCCUPANCY OVERLAP')
+    print(res[0])
+    print(res[0] > 1)
+    print(np.any(res[0] > 1))
+    
+    # Does it have conflicting N/S connectors?
+    # rolled = np.roll(res[1], 1, axis=0)
+    # print(rolled)
+    ns_conflicts = np.roll(res[1], 1, axis=0) + res[3]
+    print('\nNS CONFLICTS')
+    print(ns_conflicts)
+    print(np.abs(ns_conflicts) > 1)
+    print(np.any(np.abs(ns_conflicts) > 1))
+
+    # Does it have conflicting E/W connectors?
+    ew_conflicts = np.roll(res[4], 1, axis=1) + res[2]
+    print('\nEW CONFLICTS')
+    print(ew_conflicts)
+    print(np.abs(ew_conflicts) > 1)
+    print(np.any(np.abs(ew_conflicts) > 1))
+
+
+    print('\n\n\n')
+
+    rep2 = piece.stacks[conn_type][k][[0, 1], :, st_i_min:st_i_max, st_j_min:st_j_max]
+    print(rep2.shape)
+    board_stack = np.tile(board, (rep2.shape[0], 1, 1, 1))
+    print(board_stack.shape)
+
+    stack_res = board_stack + rep2
+
+    print(stack_res.shape)
+
+    # for layer in board_stack:
+    #     Shape(layer).visualize_shape()
+    # for layer in stack_res:
+    #     Shape(layer).visualize_shape()
+
+
+    def is_valid(board_stack):
+
+        # Does it place squares on top of each other?
+        occupancy_conflicts = np.any(board_stack[:, 0] > 1, axis=(1, 2))
+        
+        # Does it have conflicting N/S connectors?
+        ns_interactions = np.roll(board_stack[:, 1], 1, axis=1) + board_stack[:, 3]
+        ns_conflicts = np.any(np.abs(ns_interactions) > 1, axis=(1, 2))
+
+        # Does it have conflicting E/W connectors?
+        ew_interactions = np.roll(board_stack[:, 4], 1, axis=2) + board_stack[:, 2]
+        ew_conflicts = np.any(np.abs(ew_interactions) > 1, axis=(1, 2))
+
+        # If none of the above, valid!
+        any_conflict = np.any(np.vstack([occupancy_conflicts, ns_conflicts, ew_conflicts]), axis=0)
+                
+        return np.logical_not(any_conflict)
+
+    
+    is_valid(stack_res)

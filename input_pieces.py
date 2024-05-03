@@ -1,8 +1,9 @@
 from argparse import ArgumentParser
 from pathlib import Path
-from pieces import Piece
+from pieces import Board, Piece
 import pandas as pd
 import numpy as np
+import os
 
 
 def split_row(row):
@@ -11,13 +12,13 @@ def split_row(row):
     return integer_list
 
 
-def enter_piece():
+def enter_shape():
     
     occupancy_done = False
     row_idx = 0
     rows = []
 
-    print("\n\nNew piece:\n")
+    print("\n\nNew entry:\n")
     while not occupancy_done:
         row = input(f"Enter row {row_idx}, hit enter to move on, or 'exit' -->  ")
         if row == "":
@@ -43,21 +44,29 @@ def enter_piece():
     return occupancy, connectors
 
 
-def check_piece(occupancy, connectors, all_rotations=True):
-    piece = Piece(occupancy, connectors)
-    for rot in piece.rotations:
-        print(rot.occupancy)
-        rot.visualize_rotation(colour_index=1, pad=2)
-        if not all_rotations:
-            break
+def save_shape(occupancy, connectors, folder):
+    Path(folder).mkdir(parents=True, exist_ok=True)
+    occ_file = os.path.join(folder, 'occupancy.csv')
+    pd.DataFrame(occupancy).to_csv(occ_file, header=None, index=None)
+    conn_file = os.path.join(folder, 'connectors.csv')
+    pd.DataFrame(connectors).T.to_csv(conn_file, header=None, index=None)
+    print(f"\nPiece saved to {folder}")
 
 
-def save_piece(occupancy, connectors, folder, piece_idx):
-    piece_folder = f"{folder}/pieces/piece{piece_idx}/"
-    Path(piece_folder).mkdir(parents=True, exist_ok=True)
-    pd.DataFrame(occupancy).to_csv(piece_folder + 'occupancy.csv', header=None, index=None)
-    pd.DataFrame(connectors).T.to_csv(piece_folder + 'connectors.csv', header=None, index=None)
-    print(f"\nPiece saved to {piece_folder}")
+def check_shape(folder, is_board=False, all_rotations=True):
+    
+    if is_board:
+        board = Board.from_csvs(folder)
+        board.visualize_shape()
+
+    else:
+        piece = Piece.from_csvs(folder)
+        for rot in piece.rotations:
+            print(rot.occupancy)
+            rot.visualize_shape()
+            if not all_rotations:
+                break
+
 
 
 if __name__ == "__main__":
@@ -72,20 +81,30 @@ if __name__ == "__main__":
     print("\n\nCreating main folder")
     Path(args.folder).mkdir(parents=True, exist_ok=True)
 
+
+
+    # Enter board
+    enter_board = input('Enter board?').lower().startswith("y")
+    
+    if enter_board:
+        occupancy, connectors = enter_shape()
+        board_folder = os.path.join(args.folder, 'board')
+        save_shape(occupancy, connectors, board_folder)
+        check_shape(board_folder, is_board=True)
+    
+    # Enter pieces
     piece_index = args.start_piece
 
     while True:
 
-        occupancy, connectors = enter_piece()
-
+        occupancy, connectors = enter_shape()
         check_all_rotations = input("Check all rotations -->  ").lower().startswith("y")
-
-        check_piece(occupancy, connectors, all_rotations=check_all_rotations)
+        piece_folder = os.path.join(args.folder, f'piece{piece_index}')
+        save_shape(occupancy, connectors, piece_folder)
+        check_shape(piece_folder, is_board=False, all_rotations=check_all_rotations)
 
         happy = input("Happy? -->  ")
-
         if happy.lower().startswith("y"):
-            save_piece(occupancy, connectors, "puzzles/3_by_3", piece_index)
             piece_index += 1
         else:
             print(f"\nLet's try piece {piece_index} again...")
